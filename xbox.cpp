@@ -36,6 +36,9 @@ bool g_hasBondedAddress = false;
 bool g_hasReceivedReport = false;
 uint32_t g_lastReportCount = 0;
 uint32_t g_scanStartMs = 0;
+int g_securityFailCount = 0;
+bool g_isBackingOff = false;
+uint32_t g_backoffStartMs = 0;
 XboxControllerNotificationParser g_previousReport;
 uint32_t g_calibrationComboStartMs = 0, g_wifiComboStartMs = 0;
 bool g_calibrationComboFired = false, g_wifiComboFired = false;
@@ -69,6 +72,27 @@ void saveBondedAddress() {
   if (!prefs.begin("omnibot", false)) return;
   prefs.putString("xbaddr", g_bondedAddress.toString().c_str());
   prefs.putInt("xbtype", (int)g_bondedAddress.getType());
+  prefs.end();
+}
+
+void clearBondedAddress(bool clearBondsOnNextInit) {
+  Preferences prefs;
+  if (prefs.begin("omnibot", false)) {
+    prefs.remove("xbaddr");
+    prefs.remove("xbtype");
+    if (clearBondsOnNextInit) prefs.putBool("xbclear", true);
+    prefs.end();
+  }
+  g_hasBondedAddress = false;
+}
+
+void clearPendingBonds() {
+  Preferences prefs;
+  if (!prefs.begin("omnibot", false)) return;
+  if (prefs.getBool("xbclear", false)) {
+    NimBLEDevice::deleteAllBonds();
+    prefs.remove("xbclear");
+  }
   prefs.end();
 }
 
@@ -180,8 +204,15 @@ void startScan() {
   }
 }
 
-void disconnect() {
+void failConnection(bool isSecurityFailure) {
   if (g_bleClient->isConnected()) g_bleClient->disconnect();
+  if (isSecurityFailure && ++g_securityFailCount >= XBOX_SECURITY_FAILS_TO_FORGET) {
+    g_securityFailCount = 0;
+    clearBondedAddress(false);
+    NimBLEDevice::deleteAllBonds();
+  }
+  g_isBackingOff = true;
+  g_backoffStartMs = millis();
   g_linkState = LinkState::Idle;
 }
 
@@ -196,16 +227,17 @@ void connectToController() {
     if (!isLinked) delay(100);
   }
   if (!isLinked) {
-    g_linkState = LinkState::Idle;
+    failConnection(false);
     return;
   }
   if (!g_bleClient->secureConnection() || g_pairingFailed) {
-    disconnect();
+    failConnection(true);
     return;
   }
+  g_securityFailCount = 0;
   NimBLERemoteService* hidService = g_bleClient->getService(NimBLEUUID(HID_SERVICE_UUID));
   if (hidService == nullptr) {
-    disconnect();
+    failConnection(false);
     return;
   }
 
@@ -234,7 +266,7 @@ void connectToController() {
     }
   }
   if (subscribedCount == 0) {
-    disconnect();
+    failConnection(false);
     return;
   }
 
@@ -355,6 +387,7 @@ bool init() {
   if (g_isActive) return true;
   loadSettings();
   if (!NimBLEDevice::init("OmniBot")) return false;
+  clearPendingBonds();
   NimBLEDevice::setSecurityAuth(true, false, true);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
@@ -375,6 +408,8 @@ bool init() {
   g_linkState = LinkState::Idle;
   g_hasReceivedReport = false;
   g_disconnectPending = false;
+  g_securityFailCount = 0;
+  g_isBackingOff = false;
   return true;
 }
 
@@ -411,6 +446,8 @@ void loop() {
 
   switch (g_linkState) {
     case LinkState::Idle:
+      if (g_isBackingOff && (uint32_t)(nowMs - g_backoffStartMs) < XBOX_RETRY_DELAY_MS) break;
+      g_isBackingOff = false;
       startScan();
       break;
     case LinkState::Scanning:
@@ -427,13 +464,7 @@ void loop() {
 }
 
 void forgetController() {
-  Preferences prefs;
-  if (prefs.begin("omnibot", false)) {
-    prefs.remove("xbaddr");
-    prefs.remove("xbtype");
-    prefs.end();
-  }
-  g_hasBondedAddress = false;
+  clearBondedAddress(!g_isActive);
   if (g_isActive) {
     if (g_bleClient != nullptr && g_bleClient->isConnected()) g_bleClient->disconnect();
     NimBLEDevice::deleteAllBonds();

@@ -68,6 +68,8 @@ constexpr float XBOX_MIN_SPEED = 0.10f;
 constexpr uint32_t XBOX_COMBO_HOLD_MS = 2000;
 constexpr int XBOX_CONNECT_RETRIES = 3;
 constexpr uint32_t XBOX_CONNECT_TIMEOUT_MS = 2500;
+constexpr uint32_t XBOX_RETRY_DELAY_MS = 3000;
+constexpr int XBOX_SECURITY_FAILS_TO_FORGET = 2;
 
 //  BOTÃO GPIO 20
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 30;

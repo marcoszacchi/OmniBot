@@ -151,7 +151,7 @@ cinemática inversa e escreve os motores. `imu::update()` lê o giro e a bússol
 | `T m v` | testa o motor `m` (1..3) com o comando `v` |
 | `R m d` | testa o motor `m` com duty direto `d` |
 | `B 0` / `B 1` | modo WiFi / Bluetooth |
-| `X 0` | esquece o controle Xbox pareado |
+| `X 0` | esquece o controle Xbox pareado e apaga as chaves (funciona nos dois modos) |
 | `D v` | salva o duty mínimo `v` (0 a 0,8) na flash |
 | `I m 0` / `I m 1` | motor `m` (1..3) normal / invertido, salvo na flash |
 
